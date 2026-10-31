@@ -1,0 +1,40 @@
+"use client";
+import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import { useState } from "react";
+import { LocalTime } from "@/components/local-time";
+import { IssueApprovalBanner } from "@/components/issue-approval-banner";
+import { Button } from "@/components/ui/button";
+import { visibleData, pageRows } from "./activity-model.mjs";
+import { useDemo } from "./provider";
+import { ActionButton, Heading, Panel, Tag, IssueLink, Field, Select, Empty, Textarea, Dialog, linkClass } from "./ui";
+
+export function Activity({ only }) {
+  const { state, role, dispatch, setNotice } = useDemo();
+  const parameters = useSearchParams();
+  const [draft, setDraft] = useState({ issue: parameters.get("issue") || "", state: parameters.get("state") || "all" });
+  const [filters, setFilters] = useState(draft);
+  const [pages, setPages] = useState({});
+  const [question, setQuestion] = useState(null);
+  const visible = visibleData(state, role === "user" ? "member" : "admin", filters);
+  const page = (key) => pageRows(visible[key], pages[key] || 0);
+  const pagination = (key) => { const p = page(key); return <nav aria-label={`${key} pages`} className="mt-4 flex items-center gap-4 text-sm">{p.current > 0 ? <button className={linkClass} onClick={() => setPages({ ...pages, [key]: p.current - 1 })}>Newer</button> : null}{p.current < p.last ? <button className={linkClass} onClick={() => setPages({ ...pages, [key]: p.current + 1 })}>Older</button> : null}{p.last > 0 ? <span className="text-zk-muted">Page {p.current + 1} of {p.last + 1}</span> : null}</nav>; };
+  return <div className="space-y-6">
+    <Heading title={only === "events" ? "Agent audit log" : only === "questions" ? "Agent Escalations" : "Human–Agent Activity & Approvals"} description={role === "user" ? "Your agents’ work, requests and activity in this workspace." : "Workspace work and activity. Private escalations are limited to your own requests."}><Link className={linkClass} href="/settings/agents">Manage agents</Link></Heading>
+    <Panel><form className="flex flex-wrap items-end gap-3" onSubmit={(event) => { event.preventDefault(); setFilters(draft); setPages({}); }}><Field label="Issue number" placeholder="1441" value={draft.issue} onChange={(event) => setDraft({ ...draft, issue: event.target.value })} /><Select label="Claim state" value={draft.state} onChange={(event) => setDraft({ ...draft, state: event.target.value })}><option value="all">All claims</option><option>active</option><option>offered</option><option>released</option></Select><Button>Filter</Button><button type="button" className={linkClass} onClick={() => { setDraft({ issue: "", state: "all" }); setFilters({ issue: "", state: "all" }); setPages({}); }}>Clear filters</button></form><p className="mt-3 text-xs text-zk-muted">Issue number filters every section. Claim state filters Work History only. Each list shows up to 20 records.</p></Panel>
+    {!only || only === "questions" ? <Panel><h2 className="text-xl font-bold">Needs Attention</h2><h3 className="mt-5 font-bold">Your escalation responses</h3><p className="my-3 text-sm text-zk-text2">Replies guide your agent and can resume a paused claim. They do not grant pipeline approval.</p>
+      {!visible.questions.length ? <Empty>No unanswered escalations on this page.</Empty> : null}
+      {page("questions").items.map((q) => <article key={q.id} className="mb-3 rounded-xl border border-zk-border p-4 text-sm"><div className="flex flex-wrap items-center gap-2"><Tag tone={q.type === "Blocker" ? "bad" : "warn"}>{q.type}</Tag><strong>{q.agent}</strong><LocalTime date={q.createdAt} /></div><p className="my-3 whitespace-pre-wrap">{q.body}</p><IssueLink id={q.bugId} /><div className="my-3 flex flex-wrap gap-2"><ActionButton action={{ type: "answer", id: q.id, answer: "Approved. Proceed with your proposed approach." }} success="Response sent. Any paused claim can resume.">✓ Approve &amp; Unblock</ActionButton><ActionButton variant="secondary" action={{ type: "answer", id: q.id, answer: "Work authorized. You may begin implementation." }}>Authorize Work</ActionButton></div><button className={linkClass} onClick={() => setQuestion(q)}>Write a response or decline</button></article>)}{pagination("questions")}
+      <div className="mt-5 border-t border-zk-border pt-5"><h3 className="font-bold">Pipeline approvals</h3><p className="my-3 text-sm text-zk-text2">Workspace owners and admins decide these gates. Approval may resume an offer or merge in production. Requests belong to an issue and stage, not an assigned agent.</p>{role === "user" ? <Empty>Workspace owner or admin access is required to review this queue.</Empty> : !visible.approvals.length ? <Empty>No pending pipeline approvals.</Empty> : null}
+      {page("approvals").items.map((approval) => <article key={approval.id} className="my-4 space-y-2 text-sm"><IssueLink id={approval.bugId} /><p><LocalTime date={approval.createdAt} /></p><IssueApprovalBanner approval={{ ...approval, rule: { fileGlob: approval.reasons } }} canDecide={role !== "user"} onDecision={async (decision) => { await new Promise((resolve) => setTimeout(resolve, 300)); const result = dispatch({ type: "approval", id: approval.id, decision }); if (result.ok) setNotice(`Pipeline ${decision}. No live PR or work assignment was changed.`); return result; }} /></article>)}{pagination("approvals")}</div>
+    </Panel> : null}
+    {!only ? <Panel><details className="work-history-details"><summary>Work History <span>Claims, deadlines & delivery records</span></summary>{!visible.work.length ? <Empty>No claims match this filter.</Empty> : null}{page("work").items.map((claim) => { const bug = state.issues.find((row) => row.id === claim.bugId); return <article className="demo-row space-y-2 text-sm" key={claim.id}><p><strong>{claim.agent}</strong> · Claim: {claim.status} · Issue: {bug?.status.replaceAll("_", " ")}</p><IssueLink id={claim.bugId} />{bug?.pullRequestUrl ? <p><Link className={linkClass} href={`/issues/${bug.number}?pr=1`}>Pull request ↗</Link></p> : null}<p>Recorded <LocalTime date={claim.createdAt} /></p>{claim.waitingOnOwnerSince ? <p className="text-zk-warn-fg">Blocked: waiting for owner guidance. Claim clocks are paused.</p> : null}<p>{claim.status === "released" || bug?.pullRequestUrl ? "Recorded deadline" : "Delivery deadline"}: <LocalTime date={claim.deliverBy} /></p><p>Last heartbeat: <LocalTime date={claim.lastHeartbeatAt} /></p>{claim.releaseReason ? <p>Release reason: {claim.releaseReason}</p> : null}</article>; })}{pagination("work")}</details></Panel> : null}
+    {!only || only === "events" ? <Panel><h2 className="text-xl font-bold">Recent Activity</h2><p className="my-3 text-sm text-zk-muted">Audit summaries, newest first. Supplementary request rows and private payloads are hidden.</p>{!visible.events.length ? <Empty>No activity matches this filter.</Empty> : null}{page("events").items.map((event) => <article className="demo-row space-y-2 text-sm" key={event.id}><p><strong>{event.actor}</strong> · {event.action.replaceAll("_", " ").replaceAll(".", " · ")} · <LocalTime date={event.createdAt} /></p><IssueLink id={event.bugId} /></article>)}{pagination("events")}</Panel> : null}
+    {question ? <ResponseDialog question={question} close={() => setQuestion(null)} /> : null}
+  </div>;
+}
+
+export function ResponseDialog({ question, close }) {
+  const [answer, setAnswer] = useState("");
+  return <Dialog title="Respond to your agent" close={close}><p className="mb-4 text-sm">{question.body}</p><Textarea label="Your response" value={answer} onChange={(event) => setAnswer(event.target.value)} maxLength={2000} /><div className="mt-4 flex flex-wrap gap-3">{answer.trim() ? <ActionButton action={{ type: "answer", id: question.id, answer }} onDone={close}>Send response</ActionButton> : <Button disabled>Send response</Button>}<ActionButton variant="secondary" action={{ type: "answer", id: question.id, answer: "Declined. Do not proceed with this direction." }} onDone={close}>Decline request</ActionButton></div></Dialog>;
+}

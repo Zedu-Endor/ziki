@@ -1,0 +1,225 @@
+@import "tailwindcss";
+/* Dark mode (#277): the palette, mirrored. Generated; see the file header. */
+@import "./theme-dark.css";
+/* Ziki brand re-seed: accent families + surfaces, both themes. */
+@import "./theme-brand.css";
+
+:root {
+  /* Light canvas from the redesign handoff. */
+  --background: #f5f7fc;
+  --foreground: #15121f;
+  --card: #ffffff;
+  color-scheme: light;
+
+  --zk-bg: #f5f7fc;
+  --zk-surface: #ffffff;
+  --zk-text: #15121f;
+  --zk-text2: #3e4a63;
+  --zk-muted: #5f6577;
+  --zk-border: #e3e8f2;
+  --zk-divider: #eef1f7;
+  --zk-tint: #eaf2fe;
+  --zk-chip: #f0f2f7;
+  --zk-seg: #eef1f6;
+  --zk-accent: #1f5fd9;
+  --zk-ok-bg: #e3f6ec;
+  --zk-ok-fg: #146c43;
+  --zk-bad-bg: #fde8e4;
+  --zk-bad-fg: #a3261a;
+  --zk-bad-bd: #f4b3a8;
+  --zk-bad-soft: #fff4f2;
+  --zk-warn-bg: #fdf3d7;
+  --zk-warn-fg: #7a4e00;
+  --zk-warn-bd: #f0cd72;
+  --zk-info-bg: #e7f0ff;
+  --zk-info-fg: #1d4fb8;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-zk-bg: var(--zk-bg);
+  --color-zk-surface: var(--zk-surface);
+  --color-zk-text: var(--zk-text);
+  --color-zk-text2: var(--zk-text2);
+  --color-zk-muted: var(--zk-muted);
+  --color-zk-border: var(--zk-border);
+  --color-zk-divider: var(--zk-divider);
+  --color-zk-tint: var(--zk-tint);
+  --color-zk-chip: var(--zk-chip);
+  --color-zk-seg: var(--zk-seg);
+  --color-zk-accent: var(--zk-accent);
+  --color-zk-ok-bg: var(--zk-ok-bg);
+  --color-zk-ok-fg: var(--zk-ok-fg);
+  --color-zk-bad-bg: var(--zk-bad-bg);
+  --color-zk-bad-fg: var(--zk-bad-fg);
+  --color-zk-bad-bd: var(--zk-bad-bd);
+  --color-zk-bad-soft: var(--zk-bad-soft);
+  --color-zk-warn-bg: var(--zk-warn-bg);
+  --color-zk-warn-fg: var(--zk-warn-fg);
+  --color-zk-warn-bd: var(--zk-warn-bd);
+  --color-zk-info-bg: var(--zk-info-bg);
+  --color-zk-info-fg: var(--zk-info-fg);
+  --font-sans: var(--font-manrope);
+  --font-mono: var(--font-geist-mono);
+}
+
+/* Ziki brand utilities. Chrome navy is theme-independent in the reference
+   exports ("Preserved Deep Blue"), so these stay literal. */
+@theme {
+  --color-deep-ocean: #0b1733;
+  --color-sidebar-navy: #0c1938;
+  --color-blue-slate: #263b63;
+  --color-electric-blue: #3978f6;
+  /* Filled buttons and the active sidebar pill. #2E6FEF is Electric Blue
+     darkened so white text clears 4.5:1. */
+  --color-electric-blue-strong: #2e6fef;
+  --color-sky-tint: #8fc9ff;
+  --color-porcelain: #f5f7fc;
+  --color-surface-border: rgba(143, 201, 255, 0.12);
+  --color-surface-hover: rgba(57, 120, 246, 0.08);
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-manrope), ui-sans-serif, system-ui, sans-serif;
+}
+
+/* The signed-in app (Dashboard, Issues, ...) uses Inter. Set on <body> so the
+   dialogs and toasts portalled there match; public pages keep Manrope. */
+body:has([data-app-shell]) {
+  --font-sans: var(--font-inter);
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zk-motion,
+  .zk-motion * {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Header account menu opening (respects reduced motion via motion-safe:). */
+@keyframes header-pop {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* Agent decisions strip: the track holds the cards twice, so sliding it by
+   half loops seamlessly, right to left. Hover or focus pauses it; with
+   reduced motion the strip is a plain horizontal scroller instead. */
+@keyframes zk-marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+.zk-marquee-track {
+  animation: zk-marquee var(--zk-marquee-duration, 30s) linear infinite;
+}
+
+.zk-marquee:hover .zk-marquee-track,
+.zk-marquee:focus-within .zk-marquee-track {
+  animation-play-state: paused;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zk-marquee {
+    overflow-x: auto;
+  }
+  .zk-marquee-track {
+    animation: none;
+  }
+  .zk-marquee-copy {
+    display: none;
+  }
+}
+
+/*
+ * Print (#300). Paper has no use for controls, so rather than tagging every
+ * component, interactive chrome is hidden structurally: the app header, the
+ * skip link, buttons, inputs, forms and pagination. What is left is the
+ * content — the title, badges, description, comments and the list rows.
+ */
+@media print {
+  @page {
+    margin: 1.5cm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+    color: #000 !important;
+  }
+
+  header,
+  a[href="#main-content"],
+  button,
+  input,
+  select,
+  textarea,
+  form,
+  nav[aria-label="Pagination"],
+  [role="region"][aria-label^="Bulk actions"],
+  [aria-live] {
+    display: none !important;
+  }
+
+  main {
+    max-width: none !important;
+    padding: 0 !important;
+  }
+
+  /* Code wraps instead of running off the page. */
+  .rich-text pre,
+  .rich-text pre code {
+    white-space: pre-wrap !important;
+    word-break: break-word;
+    overflow: visible !important;
+    max-height: none !important;
+    background: #f1f5f9 !important;
+    color: #0f172a !important;
+  }
+
+  /* External links print their address; internal ones are app navigation
+     and would only add noise. */
+  .rich-text a[href^="http"]:not([data-bare-url])::after,
+  a[href^="https://github.com"]:not([data-bare-url])::after {
+    content: " (" attr(href) ")";
+    font-size: 0.85em;
+    font-weight: normal;
+    color: #475569;
+    word-break: break-all;
+  }
+
+  /* Nothing is split across a page boundary that should not be. */
+  li,
+  article,
+  section,
+  pre {
+    break-inside: avoid;
+  }
+
+  h1,
+  h2,
+  h3 {
+    break-after: avoid;
+  }
+
+  /* Shadows and tinted panels waste ink and print as grey smears. */
+  * {
+    box-shadow: none !important;
+  }
+}
