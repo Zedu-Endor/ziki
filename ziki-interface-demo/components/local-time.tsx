@@ -19,7 +19,9 @@ export function getClientTimeZone(): string {
 }
 
 export function getServerTimeZone(): string {
-  return getDefaultTimeZone();
+  // The hydration snapshot must match in Vercel and the browser bundle,
+  // where server-only TZ environment variables are unavailable.
+  return "UTC";
 }
 
 const emptySubscribe = () => () => {};
