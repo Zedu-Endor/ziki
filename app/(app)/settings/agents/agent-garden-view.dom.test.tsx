@@ -11,13 +11,16 @@ vi.mock("@/components/agent-plan-review", () => ({
     issueNumber,
     agentName,
     onAuthorize,
+    planProposal,
   }: {
     issueNumber: number;
     agentName: string;
     onAuthorize: () => void;
+    planProposal?: string;
   }) => (
     <div data-testid="agent-plan-review-modal">
       <p>Reviewing Plan for #{issueNumber} by {agentName}</p>
+      {planProposal && <p data-testid="plan-proposal">{planProposal}</p>}
       <button type="button" onClick={onAuthorize}>
         Authorize Plan
       </button>
@@ -102,13 +105,61 @@ const sampleAgents: ManageAgentItem[] = [
     apiKeys: [],
     areaPreferences: [],
   },
+  {
+    id: "agent-4",
+    name: "Completed Bot",
+    model: "Claude 3.5 Sonnet",
+    level: "contributor",
+    burst: false,
+    burstUntil: null,
+    createdAt: new Date().toISOString(),
+    revokedAt: null,
+    personal: false,
+    currentProjectId: "proj-1",
+    recent: true,
+    gardenState: "completed",
+    gardenActivity: "Completed work on #780",
+    completedPrUrl: "https://github.com/emerjent/ziki/pull/355",
+    activeTask: {
+      issueId: "bug-780",
+      issueNumber: 780,
+      issueTitle: "Agent Garden Visualization",
+      completedPrUrl: "https://github.com/emerjent/ziki/pull/355",
+    },
+    apiKeys: [],
+    areaPreferences: [],
+  },
+  {
+    id: "agent-5",
+    name: "Diagnostic Bot",
+    model: "GPT-4o",
+    level: "triager",
+    burst: false,
+    burstUntil: null,
+    createdAt: new Date().toISOString(),
+    revokedAt: null,
+    personal: false,
+    currentProjectId: "proj-1",
+    recent: true,
+    gardenState: "error",
+    gardenActivity: "Execution blocker on #700 (silence)",
+    errorLogUrl: "/settings/agents/agent-5/messages",
+    activeTask: {
+      issueId: "bug-700",
+      issueNumber: 700,
+      issueTitle: "Failed Task",
+      errorLogUrl: "/settings/agents/agent-5/messages",
+    },
+    apiKeys: [],
+    areaPreferences: [],
+  },
 ];
 
 describe("AgentGardenView", () => {
   it("renders garden header and active agent count", () => {
     render(<AgentGardenView agents={sampleAgents} />);
     expect(screen.getByText("Your Agent Garden")).toBeDefined();
-    expect(screen.getByText("3 active")).toBeDefined();
+    expect(screen.getByText(/5\s+active/i)).toBeDefined();
     expect(screen.getByText("Your AI team, hard at work.")).toBeDefined();
   });
 
@@ -150,5 +201,21 @@ describe("AgentGardenView", () => {
     fireEvent.click(closeBtn);
 
     expect(screen.queryByTestId("agent-plan-review-modal")).toBeNull();
+  });
+
+  it("renders completed state with PR link and error state with error log link", () => {
+    render(<AgentGardenView agents={sampleAgents} />);
+
+    // Completed state
+    expect(screen.getByText("Completed Bot")).toBeDefined();
+    expect(screen.getByText("Completed")).toBeDefined();
+    const prLink = screen.getByRole("link", { name: /PR Link/i });
+    expect(prLink.getAttribute("href")).toBe("https://github.com/emerjent/ziki/pull/355");
+
+    // Error state
+    expect(screen.getByText("Diagnostic Bot")).toBeDefined();
+    expect(screen.getByText("Diagnostics")).toBeDefined();
+    const errorLink = screen.getByRole("link", { name: /Error Log/i });
+    expect(errorLink.getAttribute("href")).toBe("/settings/agents/agent-5/messages");
   });
 });

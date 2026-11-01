@@ -111,14 +111,16 @@ export default async function AgentsSettingsPage() {
               },
             },
             claims: {
-              where: { status: "active" },
               orderBy: { claimedAt: "desc" },
-              take: 1,
+              take: 5,
               select: {
                 id: true,
+                status: true,
                 claimedAt: true,
                 waitingOnOwnerSince: true,
-                bug: { select: { id: true, number: true, title: true, status: true } },
+                releasedAt: true,
+                releaseReason: true,
+                bug: { select: { id: true, number: true, title: true, status: true, pullRequestUrl: true } },
               },
             },
           },
@@ -169,11 +171,14 @@ export default async function AgentsSettingsPage() {
       .reduce((a, b) => Math.max(a, b), 0);
 
     const unansweredQuestion = agent.questions[0] ?? null;
-    const activeClaim = agent.claims[0] ?? null;
+    const activeClaim = agent.claims.find((c) => c.status === "active") ?? null;
+    const latestClaim = agent.claims[0] ?? null;
 
     let gardenState: ManageAgentItem["gardenState"] = "idle";
     let gardenActivity = "Standing by in garden";
     let activeTask: ManageAgentItem["activeTask"] = null;
+    let completedPrUrl: string | null = null;
+    let errorLogUrl: string | null = null;
 
     if (agent.revokedAt) {
       gardenState = "offline";
@@ -186,6 +191,8 @@ export default async function AgentsSettingsPage() {
           issueId: unansweredQuestion.bug.id,
           issueNumber: unansweredQuestion.bug.number,
           issueTitle: unansweredQuestion.bug.title,
+          branchName: `fix/ENDOR-${unansweredQuestion.bug.number}`,
+          planSummary: unansweredQuestion.body,
         };
       }
     } else if (activeClaim) {
@@ -200,6 +207,42 @@ export default async function AgentsSettingsPage() {
         issueId: activeClaim.bug.id,
         issueNumber: activeClaim.bug.number,
         issueTitle: activeClaim.bug.title,
+        branchName: `feat/ENDOR-${activeClaim.bug.number}-fix`,
+        planSummary: `Autonomous execution in progress for #${activeClaim.bug.number}: ${activeClaim.bug.title}`,
+      };
+    } else if (
+      latestClaim &&
+      (latestClaim.bug.status === "resolved" ||
+        latestClaim.bug.status === "closed" ||
+        latestClaim.releaseReason === "resolved" ||
+        latestClaim.releaseReason === "closed" ||
+        Boolean(latestClaim.bug.pullRequestUrl))
+    ) {
+      gardenState = "completed";
+      gardenActivity = `Completed work on #${latestClaim.bug.number}`;
+      completedPrUrl = latestClaim.bug.pullRequestUrl;
+      activeTask = {
+        issueId: latestClaim.bug.id,
+        issueNumber: latestClaim.bug.number,
+        issueTitle: latestClaim.bug.title,
+        completedPrUrl: latestClaim.bug.pullRequestUrl,
+        branchName: `fix/ENDOR-${latestClaim.bug.number}`,
+      };
+    } else if (
+      latestClaim &&
+      (latestClaim.releaseReason === "silence" ||
+        latestClaim.releaseReason === "deadline" ||
+        latestClaim.releaseReason === "expired" ||
+        latestClaim.releaseReason === "undo")
+    ) {
+      gardenState = "error";
+      gardenActivity = `Execution blocker on #${latestClaim.bug.number} (${latestClaim.releaseReason || "sandbox error"})`;
+      errorLogUrl = `/settings/agents/${agent.id}/messages`;
+      activeTask = {
+        issueId: latestClaim.bug.id,
+        issueNumber: latestClaim.bug.number,
+        issueTitle: latestClaim.bug.title,
+        errorLogUrl: `/settings/agents/${agent.id}/messages`,
       };
     }
 
@@ -218,6 +261,8 @@ export default async function AgentsSettingsPage() {
       gardenState,
       gardenActivity,
       activeTask,
+      completedPrUrl,
+      errorLogUrl,
       apiKeys: agent.apiKeys.map((k) => ({
         id: k.id,
         prefix: k.prefix,

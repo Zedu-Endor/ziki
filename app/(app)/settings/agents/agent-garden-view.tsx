@@ -19,6 +19,7 @@ export function AgentGardenView({
   agents: ManageAgentItem[];
   onOpenControls?: (agentId: string) => void;
 }) {
+  const toast = useToast();
   const [selectedReviewAgent, setSelectedReviewAgent] = useState<ManageAgentItem | null>(null);
 
   return (
@@ -133,6 +134,22 @@ export function AgentGardenView({
                       <span>Review Plan</span>
                       <span aria-hidden="true">›</span>
                     </button>
+                  ) : state === "completed" && (agent.completedPrUrl || agent.activeTask?.completedPrUrl) ? (
+                    <a
+                      href={agent.completedPrUrl || agent.activeTask?.completedPrUrl || "#"}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3 py-1.5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                    >
+                      <span>PR Link ↗</span>
+                    </a>
+                  ) : state === "error" ? (
+                    <Link
+                      href={agent.errorLogUrl ?? `/settings/agents/${agent.id}/messages`}
+                      className="px-3 py-1.5 rounded-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold transition flex items-center gap-1 shadow-xs"
+                    >
+                      <span>Error Log ↗</span>
+                    </Link>
                   ) : agent.activeTask?.issueNumber ? (
                     <Link
                       href={`/issues/${agent.activeTask.issueNumber}`}
@@ -184,14 +201,17 @@ export function AgentGardenView({
 
             <div className="p-4">
               <AgentPlanReview
-                issueNumber={selectedReviewAgent.activeTask?.issueNumber ?? 688}
+                issueNumber={selectedReviewAgent.activeTask?.issueNumber ?? 780}
                 issueTitle={selectedReviewAgent.activeTask?.issueTitle ?? "Integrate Agent Garden state visualization"}
                 agentName={selectedReviewAgent.name}
-                branchName={`fix/${selectedReviewAgent.activeTask?.issueNumber ?? 688}-agent-garden`}
-                onAuthorize={() => {
+                branchName={selectedReviewAgent.activeTask?.branchName ?? `fix/${selectedReviewAgent.activeTask?.issueNumber ?? 780}-agent-garden`}
+                planProposal={selectedReviewAgent.activeTask?.planSummary}
+                onAuthorize={(directive) => {
+                  toast(directive ? `Directive dispatched to ${selectedReviewAgent.name}: "${directive}"` : `Plan authorized for ${selectedReviewAgent.name}. Execution resumed.`);
                   setTimeout(() => setSelectedReviewAgent(null), 1200);
                 }}
                 onRequestRevision={() => {
+                  toast(`Revision requested for ${selectedReviewAgent.name}.`);
                   setTimeout(() => setSelectedReviewAgent(null), 1200);
                 }}
               />
@@ -251,7 +271,7 @@ function GardenCharacter({ state, name }: { state: AgentGardenState; name: strin
       <div className="w-12 h-12 rounded-2xl bg-amber-100 dark:bg-amber-950/60 border border-amber-300 dark:border-amber-800 flex items-center justify-center relative shadow-xs">
         <svg className="w-8 h-8" viewBox="0 0 36 36" fill="none" aria-label={`${name} is awaiting review`}>
           <line x1="18" y1="4" x2="18" y2="8" stroke="#d97706" strokeWidth="2" strokeLinecap="round" />
-          <circle cx="18" cy="4" r="2.5" fill="#f59e0b" className="animate-pulse" />
+          <circle cx="18" cy="4" r="2.5" fill="#f59e0b" className="motion-safe:animate-pulse" />
           <rect x="7" y="8" width="22" height="18" rx="6" fill="#fbbf24" stroke="#d97706" strokeWidth="1.5" />
           <rect x="10" y="12" width="16" height="8" rx="3" fill="#1e293b" />
           <circle cx="14" cy="16" r="1.5" fill="#38bdf8" />
@@ -355,7 +375,7 @@ function GardenStateBadge({ state }: { state: AgentGardenState }) {
   if (state === "waiting") {
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-300 border border-amber-300 dark:border-amber-800">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-ping" />
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 motion-safe:animate-ping" />
         Needs review
       </span>
     );
@@ -364,7 +384,7 @@ function GardenStateBadge({ state }: { state: AgentGardenState }) {
   if (state === "working") {
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800">
-        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 motion-safe:animate-pulse" />
         Working
       </span>
     );

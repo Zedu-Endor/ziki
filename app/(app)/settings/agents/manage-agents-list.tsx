@@ -35,10 +35,16 @@ export type ManageAgentItem = {
   recent: boolean;
   gardenState?: AgentGardenState;
   gardenActivity?: string;
+  completedPrUrl?: string | null;
+  errorLogUrl?: string | null;
   activeTask?: {
     issueId?: string;
     issueNumber?: number;
     issueTitle?: string;
+    branchName?: string;
+    planSummary?: string;
+    completedPrUrl?: string | null;
+    errorLogUrl?: string | null;
   } | null;
   apiKeys: {
     id: string;

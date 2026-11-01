@@ -12,6 +12,7 @@ export type AgentPlanReviewProps = {
   additions?: number;
   deletions?: number;
   estimatedDuration?: string;
+  planProposal?: string;
   onAuthorize?: (directive: string) => void;
   onRequestRevision?: () => void;
 };
@@ -26,6 +27,7 @@ export function AgentPlanReview({
   additions = 50,
   deletions = 4,
   estimatedDuration = "20m",
+  planProposal,
   onAuthorize,
   onRequestRevision,
 }: AgentPlanReviewProps) {
@@ -96,7 +98,11 @@ export function AgentPlanReview({
               <span className="text-xs text-slate-500 dark:text-slate-400 font-mono">branch: {branchName}</span>
             </div>
             <p className="mt-2 text-xs text-slate-600 dark:text-slate-400 leading-relaxed">
-              Polling workers currently execute the cursor read outside the row-level lock. Moving the cursor read inside the <code className="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono text-[11px] text-slate-900 dark:text-slate-100">SELECT ... FOR UPDATE SKIP LOCKED</code> transaction serializes concurrent batches without worker starvation.
+              {planProposal ?? (
+                <>
+                  Polling workers currently execute the cursor read outside the row-level lock. Moving the cursor read inside the <code className="px-1 py-0.5 rounded bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 font-mono text-[11px] text-slate-900 dark:text-slate-100">SELECT ... FOR UPDATE SKIP LOCKED</code> transaction serializes concurrent batches without worker starvation.
+                </>
+              )}
             </p>
           </div>
           <div className="text-right shrink-0">
