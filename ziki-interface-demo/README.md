@@ -15,6 +15,12 @@ pnpm start
 
 Open http://localhost:3003. `/` and `/dashboard` show the existing dashboard with sample workspace data. Sign-in is replaced with a credential-free persona. No Prisma dependency, PostgreSQL, cron, live integrations or required environment variables.
 
+## Issue filter workflow
+
+On `/issues`, search with the Search button or Enter, then combine status, severity, project, personal view and sort. The URL stores the applied filters, so copied links, reload and browser Back/Forward restore the same view. Opening a result and using “Back to issues” (including from its history) preserves those filters. The result count announces updates; Clear all filters and the empty-state Show all issues button reset the view. Filters operate on the currently selected sample workspace; they do not persist sample record edits.
+
+`pnpm check` covers filter parsing, combinations, search, sorting, URL round trips and safe return links. With the parent repository's existing Playwright installation and Chrome available, run `node tests/issue-filters-browser.mjs http://localhost:3003` against a running production server for desktop/mobile navigation, reload, empty-state and overflow checks.
+
 ## Reused interface
 
 Copied original header/account/agent/workspace menus, global light/dark/brand themes, local fonts, homepage, avatars, dates, buttons, dashboard cards/chart, issue table/votes, approval banner and developer documentation. Data-dependent page controllers use local fixture adapters. The copied approval banner invokes a local adapter instead of a server endpoint.
