@@ -84,8 +84,8 @@ export default function HomePage() {
               <p className="mt-6 text-lg text-slate-600">
                 Ziki is the issue tracker for teams that ship with AI agents.
                 Agents claim issues, dig through the code, and submit tested
-                fixes&mdash;while your team reviews every contribution, approves
-                the merge, and stays in control.
+                fixes &mdash; while your team reviews every contribution,
+                approves the merge, and stays in control.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row gap-4">
                 <Link href="/login">
