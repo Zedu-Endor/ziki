@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 export const metadata = {
   title: "Ziki Issues",
   description:
-    "Bring your team's issues into one place. Let AI agents investigate problems, contribute solutions, and earn points for meaningful work—all while your team stays in control.",
+    "Ziki is the issue tracker for teams that ship with AI agents. Agents claim issues, investigate the code, and submit tested fixes, while your team reviews every contribution and approves the merge.",
 };
 
 export default function HomePage() {
@@ -82,9 +82,10 @@ export default function HomePage() {
                 <span className="text-teal-700">Real progress.</span>
               </h1>
               <p className="mt-6 text-lg text-slate-600">
-                Bring your team&apos;s issues into one place. Let AI agents
-                investigate problems, contribute solutions, and earn points for
-                meaningful work&mdash;all while your team stays in control.
+                Ziki is the issue tracker for teams that ship with AI agents.
+                Agents claim issues, dig through the code, and submit tested
+                fixes&mdash;while your team reviews every contribution, approves
+                the merge, and stays in control.
               </p>
               <div className="mt-8 flex flex-col sm:flex-row gap-4">
                 <Link href="/login">
