@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, usePathname, useSearchParams } from "next/navigation";
 import { selectOrganisationAction } from "@/app/(app)/organisations/actions";
 import { avatarTone } from "@/lib/avatar";
 import { projectPath, projectRef } from "@/lib/project-paths";
@@ -59,8 +59,6 @@ export function OrganisationSwitcher({
   organisationOptions,
   activeOrganisationId,
   externalProjects = [],
-  canManage = false,
-  orgHref = null,
   className = "",
   fullWidth = false,
   tone = "default",
@@ -68,8 +66,6 @@ export function OrganisationSwitcher({
   organisationOptions: OrganisationOption[];
   activeOrganisationId: string | null;
   externalProjects?: ExternalProjectChoice[];
-  canManage?: boolean;
-  orgHref?: string | null;
   className?: string;
   fullWidth?: boolean;
   /** "chrome" paints the control for navy chrome. "bar" is the borderless switcher in the app top bar. */
@@ -84,6 +80,9 @@ export function OrganisationSwitcher({
 
   const params = useParams();
   const currentOrgSlug = params?.org ? String(params.org) : null;
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const onEarnRoute = pathname === "/earn" || (pathname === "/discover" && searchParams?.get("from") === "earn");
 
   const externalOrg = currentOrgSlug
     ? externalProjects.find((p) => p.organisationSlug === currentOrgSlug)
@@ -137,17 +136,19 @@ export function OrganisationSwitcher({
     };
   }, [open]);
 
+  // No organisation yet. On the earner's way in (#earnings: the Earn page, and Discover opened from it) the
+  // way back is the Earn page; everywhere else, as before, the organisations page.
   if (!selected) {
     return (
       <Link
-        href="/organisations"
+        href={onEarnRoute ? "/earn" : "/organisations"}
         className={`inline-flex h-8 items-center rounded-lg px-2 text-xs font-medium focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-teal-600 focus-visible:ring-offset-2 ${
           chrome
             ? "border border-surface-border bg-[#132347] text-porcelain hover:bg-[#1a2d57]"
             : "text-slate-700 hover:bg-slate-100 hover:text-slate-900"
         } ${fullWidth ? "w-full" : ""} ${className}`}
       >
-        Organisations
+        {onEarnRoute ? "Earn" : "Organisations"}
       </Link>
     );
   }
@@ -187,9 +188,10 @@ export function OrganisationSwitcher({
           {chrome ? (
             <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
           ) : null}
-          <span className="truncate">{selectedLabel}</span>
+          {/* In the header on phones only the badge shows; the name is still read out. */}
+          <span className={bar ? "truncate max-sm:sr-only" : "truncate"}>{selectedLabel}</span>
           {/* The arrow sits right at the end of the name. */}
-          <svg className={`h-3.5 w-3.5 shrink-0 ${bar ? "-ml-1.5" : ""} ${chrome ? "text-sky-tint/70" : bar ? "text-zk-muted" : "text-slate-400"}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+          <svg className={`h-3.5 w-3.5 shrink-0 ${bar ? "-ml-1.5 max-sm:ml-0" : ""} ${chrome ? "text-sky-tint/70" : bar ? "text-zk-muted" : "text-slate-400"}`} viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
             <path
               fillRule="evenodd"
               d="M5.22 8.22a.75.75 0 0 1 1.06 0L10 11.94l3.72-3.72a.75.75 0 1 1 1.06 1.06l-4.25 4.25a.75.75 0 0 1-1.06 0L5.22 9.28a.75.75 0 0 1 0-1.06Z"
@@ -259,20 +261,6 @@ export function OrganisationSwitcher({
 
             {/* Outside the listbox: a link, not an option. */}
             <div className={`mt-1 border-t pt-1 ${chrome ? "border-surface-border" : bar ? "border-zk-divider" : "border-slate-200"}`}>
-              {canManage && orgHref ? (
-                <Link
-                  href={orgHref}
-                  onClick={() => setOpen(false)}
-                  className={`flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left ${bar ? "text-sm font-medium text-zk-text hover:bg-zk-chip" : chrome ? "text-xs text-slate-200 hover:bg-white/5" : "text-xs text-slate-700 hover:bg-slate-50"}`}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1.08-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9c.26.6.85 1 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z" />
-                  </svg>
-                  Manage organisation
-                </Link>
-              ) : null}
-
               <Link
                 href="/discover"
                 onClick={() => setOpen(false)}

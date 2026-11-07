@@ -30,6 +30,9 @@ enum Status {
 enum Substatus {
   requires_confirmation
   open
+  /// In progress · Plan review (#plan-review): a complex issue's awarded agent
+  /// writes its plan and the agent's owner approves it before the work starts.
+  plan_review
   in_progress
   requires_review
   accepted
@@ -79,6 +82,7 @@ enum ActivityType {
   category_changed
   area_changed
   duplicate_changed
+  blocker_changed
 }
 
 /// A person's role inside an organisation (#423). Everyone who existed when the
@@ -122,8 +126,33 @@ enum MissionViewport {
 /// released, by the agent, by expiry, or by silence (#438).
 enum ClaimStatus {
   offered
+  /// Held for plan review on a complex issue (#plan-review): awarded, not yet
+  /// active. It becomes active when the agent's owner approves the plan.
+  planning
   active
   released
+}
+
+/// How hard an issue is (#plan-review), set when the idea is converted and
+/// editable until the issue's first bid. Only `complex` goes through plan review.
+enum Difficulty {
+  easy
+  medium
+  hard
+  complex
+}
+
+/// A plan's risk or confidence (#plan-review).
+enum PlanScale {
+  low
+  medium
+  high
+}
+
+/// The owner's decision on a plan (#plan-review); null while it waits.
+enum PlanDecision {
+  approved
+  sent_back
 }
 
 /// A confirmation entry's verdict (#issue-confirmations): the issue is real
@@ -182,6 +211,8 @@ enum PointRole {
   signup
   /// 1 pt to a comment's author for each upvote from another person (#comment-votes).
   comment
+  /// Paid to the planning agent's owner when the owner approves its plan (#plan-review).
+  plan
   /// 1 pt for a person's first importance mark, and first bid vote, on an issue (#vote-points).
   vote
 }
@@ -235,6 +266,8 @@ enum GoalAllocationTarget {
 }
 
 model User {
+  featurePlans              FeaturePlan[]
+  savedIssueViews           SavedIssueView[]
   id                        String                  @id @default(cuid())
   name                      String
   email                     String                  @unique
@@ -256,6 +289,8 @@ model User {
   /// #618: optional EVM address (0x + 40 hex) points could later be sent to.
   /// Set only by the person themselves; read only by them and organisation admins.
   walletAddress             String?
+  /// #earnings: what the person wants to earn each week, set on Your earnings. Null: the default goal.
+  weeklyEarningsGoal        Decimal?                @db.Decimal(10, 2)
   /// Bumped on password reset; JWTs carrying an older value are rejected (#208).
   sessionVersion            Int                     @default(0)
   createdAt                 DateTime                @default(now())
@@ -282,6 +317,7 @@ model User {
   dispatchedClaims          IssueClaim[]            @relation("ClaimDispatcher")
   issueBids                 IssueBid[]              @relation("IssueBidBeneficiary")
   deliveries                Delivery[]              @relation("DeliveryBeneficiary")
+  plansOwned                Plan[]                  @relation("PlanOwner")
   confirmations             IssueConfirmation[]
   testVerdicts              TestVerdict[]
   mergeReviews              MergeReview[]           @relation("MergeReviewOnBehalfOf")
@@ -290,8 +326,6 @@ model User {
   redesignsOnBehalf         RedesignProposal[]      @relation("RedesignOnBehalfOf")
   redesignsApproved         RedesignProposal[]      @relation("RedesignApprover")
   pointEntries              PointEntry[]
-  earnTasks                 EarnTaskProgress[]
-  earnContacts              EarnContact[]
   pointDisputes             PointDispute[]          @relation("DisputeOpener")
   pointDisputesResolved     PointDispute[]          @relation("DisputeResolver")
   auditActions              AgentAuditEvent[]       @relation("AuditActorUser")
@@ -315,9 +349,13 @@ model User {
   closeSuggestions          CloseSuggestion[]       @relation("CloseSuggestionsGiven")
   reportedIdeas             Idea[]                  @relation("IdeaReporter")
   beneficiaryIdeas          Idea[]                  @relation("IdeaBeneficiary")
+  requestedSupportThreads   SupportThread[]         @relation("SupportThreadRequester")
+  threadMessages            ThreadMessage[]         @relation("ThreadMessageAuthor")
   projectMemberships        ProjectMembership[]
   projectJoinRequests       ProjectJoinRequest[]
   projectJoinRequestsReviewed ProjectJoinRequest[]  @relation("JoinRequestReviewer")
+  skillSubmissions          SkillSubmission[]       @relation("SkillSubmissionSubmittedBy")
+  reviewedSkillSubmissions  SkillSubmission[]       @relation("SkillSubmissionReviewedBy")
 }
 
 /// Single-use password reset tokens (~30 min TTL). Store only the SHA-256 hash.
@@ -355,6 +393,7 @@ model IssueType {
 }
 
 model Bug {
+  featurePlanItems          FeaturePlanItem[]
   pullRequestLinkRepairs    PullRequestLinkRepair[]
   id                        String                  @id @default(cuid())
   /// Human-readable reference (#1, #2, ...), counted per organisation (#517). The
@@ -367,6 +406,9 @@ model Bug {
   description               String
   status                    Status                  @default(open)
   substatus                 Substatus               @default(requires_confirmation)
+  /// How hard it is (#plan-review): set at conversion, editable until the first
+  /// bid. Only a complex issue's award goes through plan review.
+  difficulty                Difficulty              @default(medium)
   /// Why a closed issue was closed (#close-reasons): superseded,
   /// not_reproducible, already_implemented, duplicate, not_planned or
   /// withdrawn (lib/close-reasons.ts). Null when it is not closed.
@@ -396,6 +438,8 @@ model Bug {
   duplicateOfId             String?
   duplicateOf               Bug?                    @relation("BugDuplicates", fields: [duplicateOfId], references: [id], onDelete: SetNull)
   duplicates                Bug[]                   @relation("BugDuplicates")
+  blockedBy                 IssueBlocker[]          @relation("IssueBlockedBy")
+  blocking                  IssueBlocker[]          @relation("IssueBlocking")
   /// Product or marketing work (`WorkTrack`).
   track                     WorkTrack               @default(product)
   /// How many times this marketing work has been sent back for changes on the
@@ -457,6 +501,7 @@ model Bug {
   stakes                    IssueStake[]
   bids                      IssueBid[]
   deliveries                Delivery[]
+  plans                     Plan[]
   confirmations             IssueConfirmation[]
   /// The idea this issue was converted from (#idea-table). Every issue starts as one.
   idea                      Idea?
@@ -473,6 +518,7 @@ model Bug {
   auditEvents               AgentAuditEvent[]
   goalAllocations           GoalAllocation[]
   mistakes                  AgentMistake[]
+  supportThreads            SupportThread[]
 
   /// #517: issue numbers are per organisation, so two organisations can both have a #1.
   @@unique([organisationId, number])
@@ -495,6 +541,19 @@ model Bug {
   // so the list can be read in index order instead of sorting every row.
   @@index([isDeleted, isBoosted(sort: Desc), boostedAt(sort: Desc), voteCount(sort: Desc), updatedAt(sort: Desc), createdAt(sort: Desc)], map: "Bug_list_top_votes_idx")
   @@index([isDeleted, isBoosted(sort: Desc), boostedAt(sort: Desc), createdAt(sort: Desc), id(sort: Desc)], map: "Bug_list_newest_idx")
+}
+
+/// A dependency that explains why an issue cannot proceed until another issue is resolved.
+model IssueBlocker {
+  id           String   @id @default(cuid())
+  blockedBugId String
+  blockerBugId String
+  createdAt    DateTime @default(now())
+  blockedBug   Bug      @relation("IssueBlockedBy", fields: [blockedBugId], references: [id], onDelete: Cascade)
+  blockerBug   Bug      @relation("IssueBlocking", fields: [blockerBugId], references: [id], onDelete: Cascade)
+
+  @@unique([blockedBugId, blockerBugId])
+  @@index([blockerBugId])
 }
 
 /// A platform (Desktop, Web, Mobile) inside one organisation.
@@ -600,6 +659,9 @@ model Comment {
   /// Set on a reply to a merge review (#review-entries).
   mergeReviewId  String?
   mergeReview    MergeReview?       @relation(fields: [mergeReviewId], references: [id], onDelete: Cascade)
+  /// Set on a reply to a plan (#plan-review).
+  planId         String?
+  plan           Plan?              @relation(fields: [planId], references: [id], onDelete: Cascade)
 
   @@index([bugId])
   @@index([bugId, createdAt])
@@ -609,6 +671,7 @@ model Comment {
   @@index([deliveryId])
   @@index([testVerdictId])
   @@index([mergeReviewId])
+  @@index([planId])
 }
 
 /// Files attached to an issue or a comment (#215): screenshots, logs, PDFs,
@@ -763,11 +826,14 @@ model Organisation {
   projectAuditEvents ProjectAuditEvent[]
   jobs               Job[]
   goals              Goal[]
+  supportThreads     SupportThread[]
 }
 
 /// A project inside an organisation (organisation), e.g. Zedu Web or Zedu Desktop.
 /// Organisations hold projects and nothing in between (#no-platforms).
 model Project {
+  featurePlans          FeaturePlan[]
+  savedIssueViews        SavedIssueView[]
   agentNotes            AgentNote[]
   id                    String                @id @default(cuid())
   organisationId              String
@@ -817,8 +883,32 @@ model Project {
   noteComments          ProjectNoteComment[]
   memberships           ProjectMembership[]
   joinRequests          ProjectJoinRequest[]
+  repositories          ProjectRepository[]
 
   @@unique([organisationId, slug])
+}
+
+/// More GitHub repositories for a project (#2), e.g. its API next to its web app.
+/// `Project.repoUrl` stays the main repository; these are the others. A pull
+/// request in any of them can be linked, delivered, accepted and resolved.
+model ProjectRepository {
+  id                   String   @id @default(cuid())
+  projectId            String
+  /// `https://github.com/owner/repo`, lower-cased so a repository is listed once.
+  url                  String
+  /// Short name shown to people and agents, e.g. "API" or "Mobile".
+  label                String?
+  /// The branch fixes go into, when it isn't the repository's default. Shown to
+  /// people and agents; Ziki does not read GitHub to enforce it (#pr-reports).
+  branch               String?
+  /// GitHub App installation for this repository when it differs from the
+  /// project's (another organization). Never a token.
+  githubInstallationId String?
+  createdAt            DateTime @default(now())
+  project              Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([projectId, url])
+  @@index([projectId])
 }
 
 /// The per-project workflow dials (#595). One row per project; a missing row
@@ -855,6 +945,8 @@ model ProjectWorkflow {
   stakeInProgressLimit   Int               @default(2)
   /// Times marketing work can be sent back to the same claim before it reopens for bids.
   revisionLimit          Int               @default(2)
+  /// How long a complex issue's award has for the plan to be written and approved (#plan-review); restarts on a send-back.
+  planReviewSeconds      Int               @default(7200)
   createdAt              DateTime          @default(now())
   updatedAt              DateTime          @updatedAt
   project                Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
@@ -1090,6 +1182,7 @@ model Agent {
   claims               IssueClaim[]
   bids                 IssueBid[]
   deliveries           Delivery[]
+  plans                Plan[]
   confirmations        IssueConfirmation[]
   testVerdicts         TestVerdict[]
   mergeReviews         MergeReview[]
@@ -1118,6 +1211,8 @@ model Agent {
   stakes            IssueStake[]
   penaltiesGiven    ConfirmationPenalty[] @relation("PenaltiesGiven")
   penaltiesReceived ConfirmationPenalty[] @relation("PenaltiesReceived")
+  assignedSupportThreads SupportThread[]  @relation("SupportThreadAssignee")
+  threadMessages         ThreadMessage[]  @relation("ThreadMessageAgent")
 
   @@index([ownerUserId])
 }
@@ -1266,6 +1361,8 @@ model IssueClaim {
   awardedBid   IssueBid?
   abandonVotes AbandonVote[]
   wonStake     IssueStake?
+  /// The plan written for this claim's plan review (#plan-review).
+  plan         Plan?
   // Enforced by a partial unique index in the migration: one pending offer per issue.
   // Enforced by a partial unique index in the migration: one active claim per issue (#662).
 
@@ -1447,6 +1544,10 @@ model Delivery {
   screenshots       String[]  @default([])
   /// Test output or a verification summary.
   testResults       String?
+  /// The delivery receipt (#delivery-receipt, lib/delivery-receipt.ts): what the
+  /// deliverer verified and how, what it did not verify and why, and what the
+  /// reviewer should test. Null when the delivery carried none.
+  receipt           Json?
   createdAt         DateTime  @default(now())
   /// When it was last delivered. Delivering again replaces it.
   updatedAt         DateTime  @updatedAt
@@ -1457,6 +1558,78 @@ model Delivery {
 
   @@unique([bugId, agentId])
   @@index([bugId, createdAt])
+}
+
+/// A plan (#plan-review): the Plan review step's entry on a complex issue, one
+/// per claim, written by the awarded agent. How it read the task, what it
+/// assumes, what it is unsure of, the steps it will take (plain strings, nothing
+/// has run yet), an estimate, a risk and a confidence. The claim's beneficiary,
+/// the agent's owner, approves it or sends it back with edited steps; the agent
+/// resubmits (at most two send-backs) or refuses. The row is the current
+/// version; `revisions` keep every submitted and decided one.
+model Plan {
+  id              String        @id @default(cuid())
+  bugId           String
+  claimId         String        @unique
+  agentId         String
+  /// The claim's beneficiary: the agent's owner, who decides.
+  ownerId         String
+  /// At most two sentences.
+  summary         String
+  description     String
+  /// How the agent read the task.
+  reading         String
+  assumptions     String
+  uncertainties   String
+  /// PlanStep[]: [{ id, text, by: "agent" | "owner", at }].
+  steps           Json
+  estimateMinutes Int
+  risk            PlanScale
+  confidence      PlanScale
+  /// 1, 2 or 3: this submission's round; a send-back opens the next.
+  round           Int           @default(1)
+  submittedAt     DateTime
+  decision        PlanDecision?
+  decidedAt       DateTime?
+  /// The owner's note on a send-back.
+  decisionNote    String?
+  /// The award (or the last send-back) plus the project's planReviewSeconds.
+  reviewBy        DateTime
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  bug             Bug           @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  claim           IssueClaim    @relation(fields: [claimId], references: [id], onDelete: Cascade)
+  agent           Agent         @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  owner           User          @relation("PlanOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  revisions       PlanRevision[]
+  replies         Comment[]
+
+  @@index([bugId, createdAt])
+}
+
+/// One version of a plan (#plan-review): what the agent submitted in a round,
+/// or what the owner decided on it (with the steps as edited), so each step's
+/// author is on record.
+model PlanRevision {
+  id        String   @id @default(cuid())
+  planId    String
+  round     Int
+  /// submitted (by the agent), sent_back or approved (by the owner).
+  kind      String
+  steps     Json
+  reading   String
+  assumptions   String
+  uncertainties String
+  estimateMinutes Int
+  risk      PlanScale
+  confidence PlanScale
+  note      String?
+  byUserId  String
+  byAgentId String?
+  createdAt DateTime @default(now())
+  plan      Plan     @relation(fields: [planId], references: [id], onDelete: Cascade)
+
+  @@index([planId, createdAt])
 }
 
 /// What someone thinks of an idea (#idea-verdicts).
@@ -1486,6 +1659,7 @@ enum IdeaStatus {
 /// manager agent converts it, which creates an issue. Ideas are numbered
 /// apart from issues, per organisation.
 model Idea {
+  featurePlanItems   FeaturePlanItem[]
   id                 String           @id @default(cuid())
   /// Idea #1, #2, ... per organisation. The trigger `Idea_assign_organisation_number`
   /// replaces the sequence value with `Organisation.nextIdeaNumber`.
@@ -1558,6 +1732,43 @@ model Idea {
   @@index([projectId, track, status])
   @@index([reporterId])
   @@index([createdByAgentId])
+}
+
+/// A member's feature request and reviewed breakdown. Drafts remain private to their creator.
+model FeaturePlan {
+  id          String   @id @default(cuid())
+  projectId   String
+  creatorId   String
+  title       String
+  request     String
+  draft       Json
+  version     Int      @default(1)
+  /// The plan becomes read-only and visible to project members on first publication.
+  publishedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  creator     User     @relation(fields: [creatorId], references: [id], onDelete: Cascade)
+  items       FeaturePlanItem[]
+
+  @@index([projectId, createdAt])
+  @@index([creatorId])
+}
+
+/// A durable publication receipt: retries cannot create the same plan item twice.
+model FeaturePlanItem {
+  id       String @id @default(cuid())
+  planId   String
+  position Int
+  ideaId   String?
+  bugId    String?
+  plan     FeaturePlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  idea     Idea? @relation(fields: [ideaId], references: [id], onDelete: SetNull)
+  bug      Bug? @relation(fields: [bugId], references: [id], onDelete: SetNull)
+
+  @@unique([planId, position])
+  @@index([ideaId])
+  @@index([bugId])
 }
 
 model IdeaVerdict {
@@ -1768,6 +1979,10 @@ model PullRequestReport {
   mergeCommitSha   String?
   /// "passing", "failing", "pending" or "none" (no checks run on it).
   checks           String?
+  /// Each check on the head commit as a list, by name: which failed, which are
+  /// still running (["name","status","url?","summary?"]). Null when the agent
+  /// sent only the summary in `checks`.
+  checkRuns        Json?
   /// False when GitHub says it conflicts with its base branch.
   mergeable        Boolean?
   /// What was seen: the agent's words, or Ziki's one-line summary.
@@ -2110,77 +2325,6 @@ model PointEntry {
   @@index([organisationId, role, correctedAt])
 }
 
-/// Where a person is on each Earn marketing task (#earn-tasks). A task is
-/// started, then submitted with proof, then confirmed or rejected by staff;
-/// only a confirmed task pays (lib/earn/progress.ts).
-enum EarnTaskStatus {
-  started
-  submitted
-  confirmed
-  rejected
-}
-
-/// A manager agent's advice on a submitted earn task (#earn-agent-review). A person still confirms or sends it back.
-enum EarnAgentVerdict {
-  ready
-  send_back
-}
-
-/// A business an earner emails for Ziki (#earn-outreach): from their research, with its own link so the earner can
-/// see who opened it. `code` is the link's id: ziki.dev/r/<code>.
-model EarnContact {
-  id        String    @id @default(cuid())
-  userId    String
-  name      String
-  /// An email address or website: how the earner reaches them.
-  contact   String?
-  code      String    @unique
-  /// When the earner ticked it sent.
-  sentAt    DateTime?
-  /// The first and latest time someone opened the link, and how often.
-  openedAt  DateTime?
-  lastOpenAt DateTime?
-  opens     Int       @default(0)
-  /// The Ziki account the business made after opening the link (one account counts for one business), and when.
-  signedUpUserId String?   @unique
-  signedUpAt     DateTime?
-  /// When that account started its first project of its own.
-  startedAt      DateTime?
-  createdAt DateTime  @default(now())
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId, createdAt])
-}
-
-model EarnTaskProgress {
-  id          String         @id @default(cuid())
-  userId      String
-  /// A task id from lib/earn/draft.ts: who, research, emails or post.
-  taskKey     String
-  status      EarnTaskStatus @default(started)
-  /// What the person sent back: a sentence, links, pasted text.
-  proof       String?
-  startedAt   DateTime       @default(now())
-  submittedAt DateTime?
-  decidedAt   DateTime?
-  /// The staff member who confirmed or rejected it.
-  decidedById String?
-  /// Why it was rejected, or a note on a confirmation.
-  note        String?
-  /// A manager agent's verdict on what was sent in, for the person who decides. Cleared when it is sent again.
-  agentVerdict     EarnAgentVerdict?
-  /// The agent's reason: what it checked and, for a send-back, what to fix.
-  agentReason      String?
-  /// How sure the agent is, 0 to 100. Self-reported, not proof.
-  agentConfidence  Int?
-  agentVerdictById String?
-  agentVerdictAt   DateTime?
-  user        User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([userId, taskKey])
-  @@index([status, submittedAt])
-}
-
 /// A member saying an award is missing or wrong (#436).
 model PointDispute {
   id            String        @id @default(cuid())
@@ -2353,7 +2497,7 @@ model AgentEvent {
 model AgentInboxItem {
   id        String      @id @default(cuid())
   agentId   String
-  /// offer | reply | mention | answer | message | approval | claim
+  /// offer | reply | mention | answer | message | approval | claim | request
   kind      String
   eventId   String?
   /// The event that put it here, e.g. `claim.offered`.
@@ -2720,6 +2864,96 @@ model AgentPicture {
   agent       Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
 }
 
+/// Status of a support thread raised about a stuck fix (#requests).
+enum SupportThreadStatus {
+  open
+  taken
+  resolved
+}
+
+/// A question or help request about a stuck fix on an issue (#requests).
+/// Lands in the inbox of eligible manager/merger agents in the tenant until taken.
+model SupportThread {
+  id              String              @id @default(cuid())
+  organisationId  String
+  bugId           String
+  requesterUserId String
+  /// The manager or merger agent that took it; null while open.
+  assigneeAgentId String?
+  status          SupportThreadStatus @default(open)
+  takenAt         DateTime?
+  resolvedAt      DateTime?
+  /// manual | fix_live | issue_closed
+  resolvedReason  String?
+  lastMessageAt   DateTime            @default(now())
+  createdAt       DateTime            @default(now())
+  updatedAt       DateTime            @updatedAt
+  organisation    Organisation        @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  bug             Bug                 @relation(fields: [bugId], references: [id], onDelete: Cascade)
+  requester       User                @relation("SupportThreadRequester", fields: [requesterUserId], references: [id], onDelete: Cascade)
+  assigneeAgent   Agent?              @relation("SupportThreadAssignee", fields: [assigneeAgentId], references: [id], onDelete: SetNull)
+  messages        ThreadMessage[]
+
+  @@index([organisationId, status, lastMessageAt])
+  @@index([bugId, status])
+  @@index([requesterUserId, status])
+  @@index([assigneeAgentId, status])
+}
+
+/// A message inside a support thread (#requests).
+model ThreadMessage {
+  id            String        @id @default(cuid())
+  threadId      String
+  authorUserId  String
+  /// Set when the owner replied as the assigned agent; null for the requester.
+  authorAgentId String?
+  body          String
+  createdAt     DateTime      @default(now())
+  thread        SupportThread @relation(fields: [threadId], references: [id], onDelete: Cascade)
+  authorUser    User          @relation("ThreadMessageAuthor", fields: [authorUserId], references: [id], onDelete: Cascade)
+  authorAgent   Agent?        @relation("ThreadMessageAgent", fields: [authorAgentId], references: [id], onDelete: SetNull)
+
+  @@index([threadId, createdAt])
+}
+
+/// A contributor's skill submission to the skills library (#skill-submissions).
+/// Pending until a super admin approves or rejects it; an approved submission
+/// is published to the skills directory.
+enum SkillSubmissionStatus {
+  pending
+  approved
+  rejected
+}
+
+model SkillSubmission {
+  id               String              @id @default(cuid())
+  slug             String              @unique
+  title            String
+  category           String
+  categoryLabel      String
+  summary          String
+  tags             String[]
+  prompt           String
+  checklist        String[]            @default([])
+  sampleCommand    String?
+  documentationUrl String?
+
+  status           SkillSubmissionStatus @default(pending)
+  submittedById    String
+  submittedBy      User                @relation("SkillSubmissionSubmittedBy", fields: [submittedById], references: [id], onDelete: Cascade)
+  reviewedById     String?
+  reviewedBy       User?               @relation("SkillSubmissionReviewedBy", fields: [reviewedById], references: [id], onDelete: SetNull)
+  reviewedAt       DateTime?
+  rejectionReason  String?
+  createdAt        DateTime            @default(now())
+  updatedAt        DateTime            @updatedAt
+
+  @@index([status])
+  @@index([submittedById])
+  @@index([createdAt])
+
+}
+
 /// A standing instruction one person writes for every agent they own (#838).
 /// Scoped to the user alone, never to an agent or an issue, so the same set
 /// answers every key that user owns — across all their organisations.
@@ -2733,4 +2967,84 @@ model AgentPreference {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+/// An AI platform in the public comparison directory (#compare): Ziki itself
+/// and every platform it is compared with. Admins add and edit these in
+/// /superadmin/compare; no component changes when a platform is added.
+model ComparePlatform {
+  id             String    @id @default(cuid())
+  /// Lowercase, URL-safe and never containing "-vs-"; it is half of a comparison URL.
+  slug           String    @unique
+  name           String
+  /// A site path such as /compare/logos/x.svg. Empty shows the name's initial.
+  logoUrl        String?
+  websiteUrl     String
+  /// One of lib/compare/catalog COMPARE_CATEGORIES.
+  category       String
+  description    String
+  /// What it is for, in plain words. Feeds "Which should you choose?".
+  useCases       String[]  @default([])
+  strengths      String[]  @default([])
+  limitations    String[]  @default([])
+  pricingSummary String?
+  /// { [dimension key]: { status, note?, sourceUrl? } }. A missing key is "not verified".
+  features       Json      @default("{}")
+  /// Official pages and documents the facts above were checked against.
+  sourceUrls     String[]  @default([])
+  isZiki         Boolean   @default(false)
+  popular        Boolean   @default(false)
+  published      Boolean   @default(true)
+  sortOrder      Int       @default(0)
+  /// When someone last checked the facts against the sources. Null: never.
+  lastVerifiedAt DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  comparisonsAsA Comparison[] @relation("ComparisonPlatformA")
+  comparisonsAsB Comparison[] @relation("ComparisonPlatformB")
+
+  @@index([published, category])
+}
+
+/// Editorial content for one pair of platforms (#compare). Any two published
+/// platforms already have a comparison page built from their own data; a row
+/// here adds a hand-written introduction, details, strengths, limitations and
+/// recommendations on top, and puts the pair in the sitemap.
+model Comparison {
+  id             String          @id @default(cuid())
+  /// "{platformA.slug}-vs-{platformB.slug}", in the canonical order.
+  slug           String          @unique
+  platformAId    String
+  platformA      ComparePlatform @relation("ComparisonPlatformA", fields: [platformAId], references: [id], onDelete: Cascade)
+  platformBId    String
+  platformB      ComparePlatform @relation("ComparisonPlatformB", fields: [platformBId], references: [id], onDelete: Cascade)
+  title          String
+  /// The short description on a comparison card and under the page headline.
+  summary        String?
+  /// Hand-written intro, detail sections, strengths, limitations and recommendations (lib/compare/content.ts).
+  content        Json            @default("{}")
+  seoTitle       String?
+  seoDescription String?
+  popular        Boolean         @default(false)
+  published      Boolean         @default(false)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@unique([platformAId, platformBId])
+  @@index([published])
+}
+
+model SavedIssueView {
+  id        String   @id @default(cuid())
+  userId    String
+  projectId String
+  name      String   @db.VarChar(60)
+  status    String
+  query     String
+  createdAt DateTime @default(now())
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, projectId, name])
+  @@index([projectId])
 }

@@ -1,5 +1,6 @@
 "use server";
 
+import { closeSupportThreadsForIssue } from "@/lib/support-threads";
 import { revalidatePath } from "next/cache";
 import { activeIn } from "@/lib/agents/active-in";
 import { revalidateIssue } from "@/lib/revalidate-issue";
@@ -100,10 +101,11 @@ import { publish } from "@/lib/agent-api/events";
 import { issueChangePayload, publishWebEvent } from "@/lib/agent-api/web-events";
 import { firstPullRequestLink } from "@/lib/github/pr-mention";
 import { CommentPlacementError, placeComment, type CommentPlacement } from "@/lib/comment-placement";
-import { standingAcceptance } from "@/lib/accepted-fix";
+import { acceptedFixGate, releaseAcceptedFix, standingAcceptance } from "@/lib/accepted-fix";
 import { latestPullRequestReport, reportedClosedUnmerged } from "@/lib/agent-api/pull-request-report";
 import { isFormerNameOf } from "@/lib/github/former-repos";
-import { parseGitHubRepoUrl, parsePullRequestUrl, sameRepo } from "@/lib/github/pull-request-url";
+import { parsePullRequestUrl, sameRepo } from "@/lib/github/pull-request-url";
+import { PROJECT_REPOSITORIES_SELECT, repoForPullRequest } from "@/lib/github/project-repositories";
 import {
   agentMentionNames,
   agentOwnerIds,
@@ -439,6 +441,11 @@ export async function updateBugAction(
     return { error: TICKET_ASSIGN_ERRORS.needsAgentClaim };
   }
 
+  // #plan-review: a complex issue is won by a bid and an approved plan; assigning it by hand would skip the plan.
+  if (targetAssigneeId && targetAssigneeId !== existing.assigneeId && existing.difficulty === "complex") {
+    return { error: "A complex issue can't be assigned by hand: it is won by a bid, and its plan is approved by the agent's owner." };
+  }
+
   if (targetAssigneeId !== undefined && targetAssigneeId !== existing.assigneeId) {
     if (
       !canAssignTicket({
@@ -725,7 +732,7 @@ export async function updateBugAction(
                 where: {
                   bugId,
                   beneficiaryUserId: existing.assigneeId,
-                  status: { in: ["offered", "active"] },
+                  status: { in: ["offered", "planning", "active"] },
                   releasedAt: null,
                 },
                 select: { id: true, agentId: true, beneficiaryUserId: true },
@@ -735,7 +742,7 @@ export async function updateBugAction(
             where: {
               bugId,
               beneficiaryUserId: existing.assigneeId,
-              status: { in: ["offered", "active"] },
+              status: { in: ["offered", "planning", "active"] },
               releasedAt: null,
             },
             data: { status: "released", releasedAt: new Date(), releaseReason: "reassigned" },
@@ -1287,7 +1294,7 @@ export async function editPullRequestUrlAction(
       reporterId: true,
       assigneeId: true,
       isDeleted: true,
-      project: { select: { repoUrl: true } },
+      project: { select: { repoUrl: true, ...PROJECT_REPOSITORIES_SELECT } },
       claims: {
         where: { releasedAt: null, status: { in: ["active", "offered"] } },
         select: { status: true, beneficiaryUserId: true, agent: { select: { ownerUserId: true } } },
@@ -1359,7 +1366,8 @@ export async function editPullRequestUrlAction(
     );
   }
 
-  const repo = parseGitHubRepoUrl(existing.project?.repoUrl);
+  // The repository it is in: the main one or any the project lists (#2).
+  const repo = repoForPullRequest(existing.project, parsed.data.pullRequestUrl);
   if (repo && !sameRepo(parsedPr, repo)) {
     return fieldError(
       "pullRequestUrl",
@@ -1381,12 +1389,20 @@ export async function editPullRequestUrlAction(
     (sameRepo(oldPr, repo) || isFormerNameOf(oldPr, repo)),
   );
 
-  const accepted = await standingAcceptance(prisma, bugId);
-  if (accepted && previousPullRequestUrl && !samePullRequest) {
-    return {
-      error:
-        "This issue's accepted fix is bound to a different pull request — link the accepted one again.",
-    };
+  // #replacement-pr: an accepted fix is bound to its pull request unless that one
+  // was closed without merging; then a replacement may be linked and is reviewed afresh.
+  let replacingAcceptanceId: string | null = null;
+  if (!samePullRequest) {
+    const gate = await acceptedFixGate(bugId, previousPullRequestUrl);
+    if (gate.acceptance && previousPullRequestUrl) {
+      if (!gate.replaceable) {
+        return {
+          error:
+            "This issue's accepted fix is bound to a different pull request — link the accepted one again. (A replacement is accepted only when the accepted pull request is reported closed without merging.)",
+        };
+      }
+      replacingAcceptanceId = gate.acceptance.id;
+    }
   }
 
   const latestReport = !samePullRequest
@@ -1438,6 +1454,16 @@ export async function editPullRequestUrlAction(
       }
     }
 
+    if (replacingAcceptanceId && previousPullRequestUrl) {
+      await releaseAcceptedFix(tx, {
+        bugId,
+        acceptanceId: replacingAcceptanceId,
+        previous: previousPullRequestUrl,
+        next: nextPullRequestUrl,
+        actorUserId: userId,
+      });
+    }
+
     await publishWebEvent(tx, {
       bugId,
       type: "issue.updated",
@@ -1463,6 +1489,7 @@ export async function editPullRequestUrlAction(
           pullRequestUrl: nextPullRequestUrl,
           headSha: nextHeadSha,
           via: "editPullRequest",
+          ...(replacingAcceptanceId ? { replacesPullRequestUrl: previousPullRequestUrl } : {}),
         },
       },
     });
@@ -1506,6 +1533,7 @@ export async function addCommentAction(
     deliveryId: formData.get("deliveryId") || undefined,
     testVerdictId: formData.get("testVerdictId") || undefined,
     mergeReviewId: formData.get("mergeReviewId") || undefined,
+    planId: formData.get("planId") || undefined,
     parentId: formData.get("parentId") || undefined,
   });
 
@@ -1545,7 +1573,7 @@ export async function addCommentAction(
     if (error instanceof CommentPlacementError) return { error: error.message };
     throw error;
   }
-  const { confirmationId, bidId, deliveryId, testVerdictId, mergeReviewId, parentId, parentAuthorId } = placement;
+  const { confirmationId, bidId, deliveryId, testVerdictId, mergeReviewId, planId, parentId, parentAuthorId } = placement;
 
   // #603: only agents in this issue's organisation can be mentioned.
   const agents = await mentionedAgents(prisma, bug.organisationId, parsed.data.body);
@@ -1562,6 +1590,7 @@ export async function addCommentAction(
         deliveryId,
         testVerdictId,
         mergeReviewId,
+        planId,
         parentId,
       },
       select: { id: true },
@@ -1802,9 +1831,10 @@ export async function deleteBugAction(bugId: string): Promise<ActionResult> {
           deletedAt: new Date(),
         },
       });
-      // Release any unreleased claims on the soft-deleted issue (#627)
+      await closeSupportThreadsForIssue(tx, { bugId, reason: "issue_closed" });
+      // Release any unreleased claims on the soft-deleted issue (#627), a plan review's planning claim included.
       await tx.issueClaim.updateMany({
-        where: { bugId, releasedAt: null, status: { in: ["active", "offered"] } },
+        where: { bugId, releasedAt: null, status: { in: ["active", "offered", "planning"] } },
         data: { status: "released", releasedAt: new Date(), releaseReason: "deleted" },
       });
       // Delete attachments associated with the issue to prevent storage bloat (#658)

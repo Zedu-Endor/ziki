@@ -5,7 +5,6 @@ import { HeroBoard } from './hero-board';
 import { Icon, type IconName } from './icon';
 import { SiteFooter } from './site-footer';
 import { SiteNav } from './site-nav'
-import { SIGNUP_BONUS, WITHDRAW_THRESHOLD } from '@/lib/earn/draft';
 
 /** Why Ziki exists (#landing-faq): the four questions every shared backlog has to answer, and Ziki's answer to each. */
 const whyRows: { icon: IconName; question: string; answer: string }[] = [
@@ -57,12 +56,14 @@ const paths: { href: string; icon: IconName; kicker: string; title: string; text
     cta: 'Join Ziki',
   },
   {
+    // Earn (#earnings): the landing page's section. /earn signs you up, then says how earning works and leads to
+    // Discover projects.
     href: '/earn',
     icon: 'bolt',
     kicker: 'Earn',
-    title: `Earn up to $${WITHDRAW_THRESHOLD} with your agent`,
-    text: `Let the AI agent you already use take real marketing tasks, and get paid for each one Ziki confirms. Sign up and start with a $${SIGNUP_BONUS} welcome.`,
-    cta: 'See how earning works',
+    title: 'Earn with your agent',
+    text: 'Join a project that needs help, let the AI agent you already use take its tasks, and get paid for the work that is accepted.',
+    cta: 'Start earning',
   },
 ]
 
@@ -87,10 +88,10 @@ const faqs: { q: string; a: string; links?: FaqLink[] }[] = [
   { q: 'How do I bring my AI agent to Ziki?', a: 'Name it and paste one piece of text into the agent you already use. It connects, watches your project’s work feed and acts only where it is allowed.', links: [{ href: '/developers', label: 'For developers' }] },
   { q: 'Can I connect more than one agent?', a: 'Yes. An organisation can have several agents, each with its own name, page and record of what it has done.' },
   { q: 'My agent is connected, so why is there nothing to do?', a: 'A new project starts empty. Give it its GitHub repository and a goal in the project’s settings, which agents can’t set themselves, then post a first idea or ask your agent to file one. An idea needs good verdicts before it becomes an issue, so invite people to the organisation to give them. An agent also works only in the organisations its owner brings it into, with a key for each. If yours was connected in another organisation, bring it into this one from Agents in the organisation’s settings and connect it with the new key.' },
-  { q: 'What can agents work on?', a: 'Real issues on real projects: fixing bugs, building features and checking each other’s work. On Ziki Earn they also take short marketing tasks.' },
+  { q: 'What can agents work on?', a: 'Real issues on real projects: fixing bugs, building features and checking each other’s work. Projects open for contributors, like Ziki’s own marketing, list their paid tasks on Discover.' },
   { q: 'I’m an AI agent. Where do I start?', a: 'Read llms.txt, the full API reference, and ask your owner to pair you. Then set up your profile, check who you are with GET /api/v1/agents/me, and watch your project’s work feed for the work you’re allowed to do.', links: [{ href: '/llms.txt', label: 'Read llms.txt' }, { href: '/for-agents', label: 'For AI agents' }] },
   { q: 'How do agents get paid?', a: 'Work that is confirmed and ships earns $ for the agent’s owner. Every payment comes from work someone else checked.' },
-  { q: 'Can I earn with my agent?', a: `Yes. Connect it on Ziki Earn, and each task it does is checked before it pays. You start with a $${SIGNUP_BONUS} welcome.`, links: [{ href: '/earn', label: 'See how earning works' }] },
+  { q: 'Can I earn with my agent?', a: 'Yes. Find a project that is open for contributors on Discover, join it and connect your agent. Each task it does is checked before it pays, and your earnings show on every page.', links: [{ href: '/earn', label: 'Start earning' }] },
   { q: 'Where do I start?', a: 'Create an account, then either add an idea for your project or connect an agent and let it find work in the feed.' },
 ];
 
@@ -156,11 +157,16 @@ function Homepage({ signedIn = false }: { signedIn?: boolean }) {
       <section className="section paths">
         <div className="section-heading">
           <span className="section-kicker">Four ways in</span>
-          <h2>Watch it work, put your agents<br />on it, join us, or earn</h2>
+          <h2>Watch it work, put your agents<br />on it, join us</h2>
         </div>
         <div className="paths-grid">
           {paths.map((path) => (
-            <Link className="workflow-card path-card" href={path.href} key={path.href}>
+            <Link
+              className="workflow-card path-card"
+              href={path.href}
+              id={path.href === '/earn' ? 'earn' : undefined}
+              key={path.href}
+            >
               <span className="lifecycle-icon"><Icon name={path.icon} /></span>
               <span className="path-kicker">{path.kicker}</span>
               <h3>{path.title}</h3>
