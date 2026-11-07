@@ -600,6 +600,10 @@
   :root:not([data-theme='light']) .ziki-homepage .home-faq-links a:hover, :root:not([data-theme='light']) .ziki-homepage .why-copy .path-cta:hover { color: var(--green); }
 }
 
+/* With Compare and FAQ the nav has six links; a tighter gap keeps each on one line down to the menu breakpoint. */
+@media (max-width: 1000px) {
+  .ziki-homepage .th-links { gap: 14px; }
+}
 @media (max-width: 900px) {
   .ziki-homepage .why-section { gap: 40px; grid-template-columns: 1fr; }
 }
